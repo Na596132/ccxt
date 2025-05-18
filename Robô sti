@@ -1,0 +1,78 @@
+import ccxt
+import os
+import pandas as pd
+import time
+from ta.momentum import RSIIndicator
+from dotenv import load_dotenv
+
+# Carregar variáveis do .env
+load_dotenv()
+
+# Conexão com a Binance Testnet
+binance = ccxt.binance({
+    'apiKey': os.getenv('BINANCE_API_KEY'),
+    'secret': os.getenv('BINANCE_SECRET'),
+    'enableRateLimit': True,
+})
+binance.set_sandbox_mode(True)  # Testnet ativado
+binance.urls['api'] = binance.urls['test']
+
+# Configurações do robô
+symbol = 'BTC/USDT'
+quantidade = 0.001
+timeframe = '1h'
+take_profit_pct = 3
+stop_loss_pct = -2
+
+# Estado da posição
+position_open = False
+entry_price = 0
+
+def fetch_candles():
+    ohlcv = binance.fetch_ohlcv(symbol, timeframe=timeframe, limit=100)
+    df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+    return df
+
+def calculate_rsi(df):
+    rsi = RSIIndicator(close=df['close'], window=14)
+    df['rsi'] = rsi.rsi()
+    return df
+
+def place_buy(price):
+    global position_open, entry_price
+    print(f"--- COMPRANDO a {price:.2f} USDT ---")
+    binance.create_market_buy_order(symbol, quantidade)
+    entry_price = price
+    position_open = True
+
+def place_sell(price, motivo):
+    global position_open
+    print(f"--- VENDENDO a {price:.2f} USDT | Motivo: {motivo} ---")
+    binance.create_market_sell_order(symbol, quantidade)
+    position_open = False
+
+# Loop principal
+while True:
+    try:
+        df = fetch_candles()
+        df = calculate_rsi(df)
+        rsi = df['rsi'].iloc[-1]
+        preco_atual = df['close'].iloc[-1]
+
+        print(f"[INFO] RSI: {rsi:.2f} | Preço: {preco_atual:.2f}")
+
+        if not position_open and rsi < 30:
+            place_buy(preco_atual)
+
+        elif position_open:
+            variacao = (preco_atual - entry_price) / entry_price * 100
+            if variacao >= take_profit_pct:
+                place_sell(preco_atual, "Take Profit")
+            elif variacao <= stop_loss_pct:
+                place_sell(preco_atual, "Stop Loss")
+
+        time.sleep(60)
+
+    except Exception as e:
+        print("[ERRO]", e)
+        time.sleep(60)
