@@ -1,0 +1,7 @@
+binance = ccxt.binance({
+    'apiKey': os.getenv('BINANCE_API_KEY'),
+    'secret': os.getenv('BINANCE_SECRET'),
+    'enableRateLimit': True,
+})
+binance.set_sandbox_mode(True)  # Ativa o modo Testnet
+binance.urls['api'] = binance.urls['test']
